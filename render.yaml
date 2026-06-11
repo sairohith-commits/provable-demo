@@ -1,22 +1,19 @@
 # Render Blueprint for the Provable demo (pnpm + Turborepo monorepo).
 #
-# Four services, all free tier:
-#   provable-db     — Postgres
+# Three services, all free tier:
 #   provable-redis  — Key Value (Redis-compatible, for BullMQ)
 #   provable-api    — Fastify API + in-process BullMQ worker (apps/api)
 #   provable-web    — Next.js dashboard (apps/web)
+#
+# Postgres is NOT provisioned here (Render allows only one free Postgres per
+# workspace, already used elsewhere). Set DATABASE_URL manually on provable-api
+# in the dashboard — paste your Neon (or other) Postgres connection string.
 #
 # NOTE on schema: this repo manages the DB with `prisma db push` (there is no
 # prisma/migrations folder), so the API start command runs `prisma db push`
 # instead of `prisma migrate deploy`. It is idempotent and creates the schema on
 # first boot. (If you later add migrations, switch the start command to
 # `prisma migrate deploy`.)
-
-databases:
-  - name: provable-db
-    plan: free
-    databaseName: provable
-    user: provable
 
 services:
   # ---- Redis / Key Value (BullMQ) ----
@@ -42,10 +39,9 @@ services:
     envVars:
       - key: NODE_VERSION
         value: "20.18.0"
+      # Paste your Neon (or other) Postgres connection string in the dashboard.
       - key: DATABASE_URL
-        fromDatabase:
-          name: provable-db
-          property: connectionString
+        sync: false
       - key: REDIS_URL
         fromService:
           type: keyvalue

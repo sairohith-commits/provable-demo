@@ -1,0 +1,111 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Mode {
+  SHADOW
+  COPILOT
+  SOLO
+}
+
+enum Outcome {
+  SUCCESS
+  FAILURE
+  PARTIAL
+}
+
+enum AlertType {
+  RUNAWAY_COST
+  COMPLIANCE
+  READINESS_DROP
+  ANOMALY
+}
+
+model Org {
+  id        String   @id @default(cuid())
+  name      String
+  apiKey    String?  @unique // demo-grade org key, e.g. pk_live_<slug>; used for self-enrollment
+  agents    Agent[]
+  createdAt DateTime @default(now())
+}
+
+model Agent {
+  id        String   @id @default(cuid())
+  orgId     String
+  org       Org      @relation(fields: [orgId], references: [id])
+  name      String
+  purpose   String
+  tasks     Task[]
+  events    Event[]
+  alerts    Alert[]
+  createdAt DateTime @default(now())
+}
+
+model Task {
+  id        String   @id @default(cuid())
+  agentId   String
+  agent     Agent    @relation(fields: [agentId], references: [id])
+  name      String
+  key       String? // stable slug like "set_priority"; agents address tasks by key, not cuid
+  riskLevel String // "low" | "medium" | "high"
+  events    Event[]
+  scores    Score[]
+  createdAt DateTime @default(now())
+
+  @@unique([agentId, key])
+}
+
+model Event {
+  id            String   @id @default(cuid())
+  agentId       String
+  agent         Agent    @relation(fields: [agentId], references: [id])
+  taskId        String
+  task          Task     @relation(fields: [taskId], references: [id])
+  outcome       Outcome
+  confidence    Float // 0.0 - 1.0
+  wasOverridden Boolean  @default(false)
+  wasEscalated  Boolean  @default(false)
+  latencyMs     Int?
+  tokens        Int?
+  metadata      Json?
+  createdAt     DateTime @default(now())
+}
+
+model Score {
+  id             String   @id @default(cuid())
+  taskId         String
+  task           Task     @relation(fields: [taskId], references: [id])
+  accuracyRate   Float
+  confidenceAvg  Float
+  overrideRate   Float
+  escalationRate Float
+  readinessScore Float
+  mode           Mode
+  eventCount     Int
+  calculatedAt   DateTime @default(now())
+}
+
+model Policy {
+  id        String   @id @default(cuid())
+  agentId   String
+  name      String
+  config    Json
+  createdAt DateTime @default(now())
+}
+
+model Alert {
+  id        String    @id @default(cuid())
+  agentId   String
+  agent     Agent     @relation(fields: [agentId], references: [id])
+  type      AlertType
+  severity  String // "low" | "medium" | "high"
+  message   String
+  resolved  Boolean   @default(false)
+  metadata  Json?
+  createdAt DateTime  @default(now())
+}

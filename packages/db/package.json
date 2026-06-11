@@ -1,0 +1,31 @@
+{
+  "name": "@provable/db",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./scoring": "./src/scoring.ts"
+  },
+  "scripts": {
+    "db:generate": "dotenv -e ../../.env -- prisma generate",
+    "db:push": "dotenv -e ../../.env -- prisma db push --skip-generate",
+    "db:seed": "dotenv -e ../../.env -- tsx src/seed.ts",
+    "db:seed:structure": "dotenv -e ../../.env -- tsx src/seed-structure.ts",
+    "db:studio": "dotenv -e ../../.env -- prisma studio",
+    "test": "tsx src/scoring.test.ts"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.1.0",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "dotenv-cli": "^7.4.4",
+    "prisma": "^6.1.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3"
+  }
+}

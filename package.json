@@ -1,0 +1,25 @@
+{
+  "name": "provable-demo",
+  "version": "0.0.0",
+  "private": true,
+  "packageManager": "pnpm@11.5.2",
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "infra:up": "docker compose up -d",
+    "infra:down": "docker compose down",
+    "db:push": "pnpm --filter @provable/db db:push",
+    "db:generate": "pnpm --filter @provable/db db:generate",
+    "db:seed": "pnpm --filter @provable/db db:seed",
+    "db:seed:structure": "pnpm --filter @provable/db db:seed:structure",
+    "agents:warmup": "pnpm --filter @provable/agents agents:warmup",
+    "agents:live": "pnpm --filter @provable/agents agents:live",
+    "agents:runaway": "pnpm --filter @provable/agents agents:runaway",
+    "db:studio": "pnpm --filter @provable/db db:studio",
+    "demo:fire": "pnpm --filter @provable/sdk demo:fire"
+  },
+  "devDependencies": {
+    "turbo": "^2.5.0",
+    "typescript": "^5.6.3"
+  }
+}

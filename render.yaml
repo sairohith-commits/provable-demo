@@ -1,9 +1,10 @@
 # Render Blueprint for the Provable demo (pnpm + Turborepo monorepo).
 #
-# Three services, all free tier:
-#   provable-redis  — Key Value (Redis-compatible, for BullMQ)
-#   provable-api    — Fastify API + in-process BullMQ worker (apps/api)
-#   provable-web    — Next.js dashboard (apps/web)
+# Four services, all free tier:
+#   provable-redis    — Key Value (Redis-compatible, for BullMQ)
+#   provable-api      — Fastify API + in-process BullMQ worker (apps/api)
+#   provable-web      — Next.js dashboard (apps/web)
+#   provable-gateway  — Anthropic /v1/messages proxy + telemetry (apps/gateway)
 #
 # Postgres is NOT provisioned here (Render allows only one free Postgres per
 # workspace, already used elsewhere). Set DATABASE_URL manually on provable-api
@@ -47,6 +48,25 @@ services:
           type: keyvalue
           name: provable-redis
           property: connectionString # rediss:// (TLS) — handled by apps/api/src/redis.ts
+
+  # ---- Gateway (apps/gateway) — Anthropic /v1/messages proxy ----
+  - type: web
+    name: provable-gateway
+    runtime: node
+    plan: free
+    region: oregon
+    rootDir: .
+    autoDeploy: true
+    healthCheckPath: /health
+    buildCommand: npm install -g pnpm@9 && pnpm install --no-frozen-lockfile && pnpm --filter @provable/db exec prisma generate
+    startCommand: pnpm --filter @provable/gateway exec tsx src/index.ts
+    envVars:
+      - key: NODE_VERSION
+        value: "20.18.0"
+      # Same Neon connection string as provable-api (for GatewayCall writes
+      # and org-key lookups).
+      - key: DATABASE_URL
+        sync: false
 
   # ---- Web / dashboard (apps/web) ----
   - type: web

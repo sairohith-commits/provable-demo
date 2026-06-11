@@ -121,6 +121,111 @@ export async function registerRoutes(app: FastifyInstance) {
     }));
   });
 
+  // ---- Gateway telemetry (apps/gateway captures GatewayCall rows) ----
+
+  // GET /gateway/stats — today's call volume / spend + discovery summary.
+  app.get("/gateway/stats", async (req, reply) => {
+    const org = await orgFromKey(req);
+    if (!org) return reply.code(401).send({ error: "missing or invalid x-provable-key" });
+
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+
+    const [today, agentsDiscovered, last] = await Promise.all([
+      prisma.gatewayCall.aggregate({
+        where: { orgId: org.id, createdAt: { gte: startOfDay } },
+        _count: { _all: true },
+        _sum: { costUsd: true },
+      }),
+      prisma.gatewayCall.findMany({
+        where: { orgId: org.id, agentId: { not: null } },
+        distinct: ["agentId"],
+        select: { agentId: true },
+      }),
+      prisma.gatewayCall.findFirst({
+        where: { orgId: org.id },
+        orderBy: { createdAt: "desc" },
+        select: { createdAt: true },
+      }),
+    ]);
+
+    return {
+      callsToday: today._count._all,
+      spendToday: today._sum.costUsd ?? 0,
+      agentsDiscovered: agentsDiscovered.length,
+      lastCallAt: last?.createdAt ?? null,
+    };
+  });
+
+  // GET /gateway/by-agent — spend + call count grouped by agent.
+  app.get("/gateway/by-agent", async (req, reply) => {
+    const org = await orgFromKey(req);
+    if (!org) return reply.code(401).send({ error: "missing or invalid x-provable-key" });
+
+    const grouped = await prisma.gatewayCall.groupBy({
+      by: ["agentId"],
+      where: { orgId: org.id },
+      _sum: { costUsd: true },
+      _count: { _all: true },
+    });
+
+    const agentIds = grouped.map((g) => g.agentId).filter((id): id is string => !!id);
+    const agents = await prisma.agent.findMany({ where: { id: { in: agentIds } }, select: { id: true, name: true } });
+    const nameById = new Map(agents.map((a) => [a.id, a.name]));
+
+    return grouped
+      .map((g) => ({
+        agent: g.agentId ? (nameById.get(g.agentId) ?? "unknown") : "unknown",
+        costUsd: g._sum.costUsd ?? 0,
+        calls: g._count._all,
+      }))
+      .sort((a, b) => b.costUsd - a.costUsd);
+  });
+
+  // GET /gateway/by-model — call share grouped by model.
+  app.get("/gateway/by-model", async (req, reply) => {
+    const org = await orgFromKey(req);
+    if (!org) return reply.code(401).send({ error: "missing or invalid x-provable-key" });
+
+    const grouped = await prisma.gatewayCall.groupBy({
+      by: ["model"],
+      where: { orgId: org.id },
+      _count: { _all: true },
+    });
+
+    const total = grouped.reduce((sum, g) => sum + g._count._all, 0);
+
+    return grouped
+      .map((g) => ({
+        model: g.model,
+        calls: g._count._all,
+        pct: total > 0 ? (g._count._all / total) * 100 : 0,
+      }))
+      .sort((a, b) => b.calls - a.calls);
+  });
+
+  // GET /gateway/feed?limit=50 — recent calls, most recent first.
+  app.get<{ Querystring: { limit?: string } }>("/gateway/feed", async (req, reply) => {
+    const org = await orgFromKey(req);
+    if (!org) return reply.code(401).send({ error: "missing or invalid x-provable-key" });
+
+    const limit = Math.min(Number(req.query.limit ?? 50), 200);
+    const calls = await prisma.gatewayCall.findMany({
+      where: { orgId: org.id },
+      orderBy: { createdAt: "desc" },
+      take: limit,
+      include: { agent: { select: { name: true } } },
+    });
+
+    return calls.map((c) => ({
+      agent: c.agent?.name ?? "unknown",
+      model: c.model,
+      tokens: c.inputTokens + c.outputTokens,
+      costUsd: c.costUsd,
+      ago: relativeTime(c.createdAt),
+    }));
+  });
+
   // GET /org/key — returns the authenticated org's API key + the public API
   // URL agents should call. Powers the dashboard's self-service onboarding modal.
   app.get("/org/key", async (req, reply) => {
@@ -278,6 +383,19 @@ async function orgFromKey(req: { headers: Record<string, any> }) {
   const key = req.headers["x-provable-key"];
   if (!key) return null;
   return prisma.org.findUnique({ where: { apiKey: String(key) } });
+}
+
+// "3m ago", "2h ago", "just now" — for the gateway feed.
+function relativeTime(date: Date): string {
+  const diffMs = Date.now() - date.getTime();
+  const s = Math.max(0, Math.round(diffMs / 1000));
+  if (s < 45) return "just now";
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.round(h / 24);
+  return `${d}d ago`;
 }
 
 function normalizeOutcome(o: unknown): string | null {

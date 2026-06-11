@@ -27,23 +27,25 @@ enum AlertType {
 }
 
 model Org {
-  id        String   @id @default(cuid())
-  name      String
-  apiKey    String?  @unique // demo-grade org key, e.g. pk_live_<slug>; used for self-enrollment
-  agents    Agent[]
-  createdAt DateTime @default(now())
+  id           String        @id @default(cuid())
+  name         String
+  apiKey       String?       @unique // demo-grade org key, e.g. pk_live_<slug>; used for self-enrollment
+  agents       Agent[]
+  gatewayCalls GatewayCall[]
+  createdAt    DateTime      @default(now())
 }
 
 model Agent {
-  id        String   @id @default(cuid())
-  orgId     String
-  org       Org      @relation(fields: [orgId], references: [id])
-  name      String
-  purpose   String
-  tasks     Task[]
-  events    Event[]
-  alerts    Alert[]
-  createdAt DateTime @default(now())
+  id           String        @id @default(cuid())
+  orgId        String
+  org          Org           @relation(fields: [orgId], references: [id])
+  name         String
+  purpose      String
+  tasks        Task[]
+  events       Event[]
+  alerts       Alert[]
+  gatewayCalls GatewayCall[]
+  createdAt    DateTime      @default(now())
 }
 
 model Task {
@@ -108,4 +110,22 @@ model Alert {
   resolved  Boolean   @default(false)
   metadata  Json?
   createdAt DateTime  @default(now())
+}
+
+// One row per LLM call observed by apps/gateway (the Anthropic proxy).
+// Captured best-effort, after the provider response is returned to the agent.
+model GatewayCall {
+  id           String   @id @default(cuid())
+  orgId        String
+  org          Org      @relation(fields: [orgId], references: [id])
+  agentId      String?
+  agent        Agent?   @relation(fields: [agentId], references: [id])
+  model        String
+  inputTokens  Int
+  outputTokens Int
+  costUsd      Float
+  latencyMs    Int
+  createdAt    DateTime @default(now())
+
+  @@index([orgId, createdAt])
 }

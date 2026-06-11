@@ -33,7 +33,7 @@ services:
     rootDir: .
     autoDeploy: true
     healthCheckPath: /health
-    buildCommand: corepack enable && pnpm install --no-frozen-lockfile && pnpm --filter @provable/db exec prisma generate
+    buildCommand: npm install -g pnpm@11.5.2 && pnpm install --no-frozen-lockfile && pnpm --filter @provable/db exec prisma generate
     # Sync the schema, then run the API (tsx runs the TS workspace directly).
     startCommand: pnpm --filter @provable/db exec prisma db push --skip-generate && pnpm --filter @provable/api exec tsx src/index.ts
     envVars:
@@ -56,7 +56,7 @@ services:
     region: oregon
     rootDir: .
     autoDeploy: true
-    buildCommand: corepack enable && pnpm install --no-frozen-lockfile && pnpm --filter @provable/web build
+    buildCommand: npm install -g pnpm@11.5.2 && pnpm install --no-frozen-lockfile && pnpm --filter @provable/web build
     startCommand: pnpm --filter @provable/web exec next start -p $PORT -H 0.0.0.0
     envVars:
       - key: NODE_VERSION

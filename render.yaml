@@ -1,0 +1,72 @@
+# Render Blueprint for the Provable demo (pnpm + Turborepo monorepo).
+#
+# Four services, all free tier:
+#   provable-db     — Postgres
+#   provable-redis  — Key Value (Redis-compatible, for BullMQ)
+#   provable-api    — Fastify API + in-process BullMQ worker (apps/api)
+#   provable-web    — Next.js dashboard (apps/web)
+#
+# NOTE on schema: this repo manages the DB with `prisma db push` (there is no
+# prisma/migrations folder), so the API start command runs `prisma db push`
+# instead of `prisma migrate deploy`. It is idempotent and creates the schema on
+# first boot. (If you later add migrations, switch the start command to
+# `prisma migrate deploy`.)
+
+databases:
+  - name: provable-db
+    plan: free
+    databaseName: provable
+    user: provable
+
+services:
+  # ---- Redis / Key Value (BullMQ) ----
+  - type: keyvalue
+    name: provable-redis
+    plan: free
+    region: oregon
+    ipAllowList: [] # internal connections only
+    maxmemoryPolicy: noeviction # required by BullMQ
+
+  # ---- API (apps/api) ----
+  - type: web
+    name: provable-api
+    runtime: node
+    plan: free
+    region: oregon
+    rootDir: .
+    autoDeploy: true
+    healthCheckPath: /health
+    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm --filter @provable/db exec prisma generate
+    # Sync the schema, then run the API (tsx runs the TS workspace directly).
+    startCommand: pnpm --filter @provable/db exec prisma db push --skip-generate && pnpm --filter @provable/api exec tsx src/index.ts
+    envVars:
+      - key: NODE_VERSION
+        value: "20.18.0"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: provable-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: provable-redis
+          property: connectionString # rediss:// (TLS) — handled by apps/api/src/redis.ts
+
+  # ---- Web / dashboard (apps/web) ----
+  - type: web
+    name: provable-web
+    runtime: node
+    plan: free
+    region: oregon
+    rootDir: .
+    autoDeploy: true
+    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm --filter @provable/web build
+    startCommand: pnpm --filter @provable/web exec next start -p $PORT -H 0.0.0.0
+    envVars:
+      - key: NODE_VERSION
+        value: "20.18.0"
+      # Set this to the API's public URL after provable-api is live, e.g.
+      # https://provable-api.onrender.com  — it is read at BUILD time by Next.js,
+      # so set it before/at the first web deploy, then redeploy if you change it.
+      - key: NEXT_PUBLIC_API_URL
+        sync: false

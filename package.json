@@ -12,6 +12,7 @@
     "db:generate": "pnpm --filter @provable/db db:generate",
     "db:seed": "pnpm --filter @provable/db db:seed",
     "db:seed:structure": "pnpm --filter @provable/db db:seed:structure",
+    "db:seed:structure:prod": "pnpm --filter @provable/db exec tsx src/seed-structure.ts",
     "agents:warmup": "pnpm --filter @provable/agents agents:warmup",
     "agents:live": "pnpm --filter @provable/agents agents:live",
     "agents:runaway": "pnpm --filter @provable/agents agents:runaway",

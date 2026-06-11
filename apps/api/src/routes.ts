@@ -121,6 +121,18 @@ export async function registerRoutes(app: FastifyInstance) {
     }));
   });
 
+  // GET /org/key — returns the authenticated org's API key + the public API
+  // URL agents should call. Powers the dashboard's self-service onboarding modal.
+  app.get("/org/key", async (req, reply) => {
+    const org = await orgFromKey(req);
+    if (!org) return reply.code(401).send({ error: "missing or invalid x-provable-key" });
+
+    const apiUrl =
+      process.env.PUBLIC_API_URL ?? `${req.protocol}://${req.headers.host}`;
+
+    return { apiKey: org.apiKey, apiUrl };
+  });
+
   // POST /register — self-enrollment by org key. Idempotent: upsert agent by
   // (orgId, name) and each task by (agentId, key). No internal IDs cross the wire.
   app.post<{ Body: RegisterBody }>("/register", async (req, reply) => {

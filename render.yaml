@@ -66,3 +66,8 @@ services:
       # so set it before/at the first web deploy, then redeploy if you change it.
       - key: NEXT_PUBLIC_API_URL
         sync: false
+      # Org API key (server-side only). Powers the "Onboard agent" modal's
+      # call to GET /org/key — paste the same pk_live_... key from the
+      # structure seed output. Never exposed to the browser.
+      - key: PROVABLE_API_KEY
+        sync: false

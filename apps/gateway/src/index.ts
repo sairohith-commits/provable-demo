@@ -7,8 +7,14 @@ config({ path: resolve(process.cwd(), "../../.env") });
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import { registerProxyRoutes } from "./proxy.js";
+import { LOG_REDACT_PATHS } from "./sanitize.js";
 
-const app = Fastify({ logger: true });
+// Defence in depth: pino strips the provider/org credentials from any logged
+// object (incl. Fastify's default request logging) before it is serialized, so
+// authorization / x-api-key / x-provable-key can never reach a log sink.
+const app = Fastify({
+  logger: { redact: { paths: LOG_REDACT_PATHS, remove: true } },
+});
 
 await app.register(cors, {
   origin: true,

@@ -42,10 +42,14 @@ export async function register() {
 }`;
 }
 
-function configFor(apiUrl: string, apiKey: string, agentName: string) {
+function configFor(apiUrl: string, apiKeyPrefix: string, agentName: string) {
+  // The full key is shown once at creation/rotation and is unrecoverable after.
+  // We only know the stored display prefix here — never present it as usable.
   return `PROVABLE_ENABLED=true
 PROVABLE_API_URL=${apiUrl}
-PROVABLE_API_KEY=${apiKey}
+# Paste your full org key below (shown once at creation/rotation).
+# Stored prefix for identification only: ${apiKeyPrefix}…
+PROVABLE_API_KEY=
 PROVABLE_AGENT_NAME=${agentName}`;
 }
 
@@ -112,7 +116,7 @@ export function OnboardAgentModal() {
       const res = await fetch("/api/org-key");
       const body = await res.json();
       if (!res.ok) throw new Error(body?.error ?? `request failed (${res.status})`);
-      setApiKey(body.apiKey);
+      setApiKey(body.apiKeyPrefix);
       setApiUrl(body.apiUrl);
       setStep(2);
     } catch (e: any) {

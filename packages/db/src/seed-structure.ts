@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 config({ path: resolve(process.cwd(), "../../.env") });
 
 import { prisma } from "./client.js";
+import { generateApiKey } from "./apiKey.js";
 
 // Phase 9 structure seed: org, agents, tasks, and policies with ZERO events.
 // All telemetry now comes from real agent runs (apps/agents). Never mix this
@@ -25,10 +26,6 @@ const TASK_KEYS: Record<string, string> = {
   "Resolve support ticket": "resolve_ticket",
 };
 
-// Demo-grade org API key. Stable across re-seeds so the external agent repo's
-// .env stays valid; printed below for you to paste into that repo.
-const ORG_API_KEY = "pk_live_atlas_a1b2c3d4e5f6";
-
 async function main() {
   console.log("Resetting database (structure seed — zero events)…");
   await prisma.score.deleteMany();
@@ -39,7 +36,10 @@ async function main() {
   await prisma.agent.deleteMany();
   await prisma.org.deleteMany();
 
-  const org = await prisma.org.create({ data: { name: "Atlas Insurance", apiKey: ORG_API_KEY } });
+  // Generate a real, full-entropy key. Only the hash + display prefix are
+  // stored; the full key is printed once below and is unrecoverable thereafter.
+  const { fullKey, apiKeyHash, apiKeyPrefix } = generateApiKey();
+  const org = await prisma.org.create({ data: { name: "Atlas Insurance", apiKeyHash, apiKeyPrefix } });
 
   const triage = await prisma.agent.create({
     data: {
@@ -94,10 +94,11 @@ async function main() {
   }
 
   console.log("\n" + "=".repeat(64));
-  console.log("  ORG API KEY (paste into the external agent repo's .env as");
-  console.log("  PROVABLE_API_KEY):\n");
-  console.log(`      ${ORG_API_KEY}`);
-  console.log("\n  org: Atlas Insurance   PROVABLE_API_URL=http://localhost:4000");
+  console.log("  ORG API KEY — shown ONCE, not stored (only its hash + prefix are).");
+  console.log("  Paste into the external agent repo's .env as PROVABLE_API_KEY:\n");
+  console.log(`      ${fullKey}`);
+  console.log(`\n  display prefix (stored): ${apiKeyPrefix}…`);
+  console.log("  org: Atlas Insurance   PROVABLE_API_URL=http://localhost:4000");
   console.log("=".repeat(64));
 }
 

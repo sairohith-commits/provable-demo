@@ -106,8 +106,16 @@ export interface ClaimEvent {
   createdAt: string;
 }
 
+// All api.* fetches run in a SERVER context (the dashboard pages are async RSCs
+// with `export const dynamic = "force-dynamic"`; client components only import
+// types/helpers from this module). PROVABLE_API_KEY is a server-only env var —
+// it is read here, never prefixed NEXT_PUBLIC_, and never reaches the browser.
+// The dashboard endpoints are tenant-scoped, so the key identifies the org whose
+// agents/alerts/roi/tokens/audit are returned.
 async function get<T>(path: string): Promise<T> {
-  const res = await fetch(`${API_URL}${path}`, { cache: "no-store" });
+  const key = process.env.PROVABLE_API_KEY;
+  const headers: Record<string, string> = key ? { "x-provable-key": key } : {};
+  const res = await fetch(`${API_URL}${path}`, { cache: "no-store", headers });
   if (!res.ok) throw new Error(`API ${path} -> ${res.status}`);
   return res.json() as Promise<T>;
 }

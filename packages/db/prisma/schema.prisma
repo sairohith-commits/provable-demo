@@ -27,12 +27,14 @@ enum AlertType {
 }
 
 model Org {
-  id           String        @id @default(cuid())
-  name         String
-  apiKey       String?       @unique // demo-grade org key, e.g. pk_live_<slug>; used for self-enrollment
-  agents       Agent[]
-  gatewayCalls GatewayCall[]
-  createdAt    DateTime      @default(now())
+  id              String        @id @default(cuid())
+  name            String
+  apiKeyHash      String        @unique // sha256 hex of the full key
+  apiKeyPrefix    String        // e.g. "pk_live_a1b2c3d4" — display only
+  apiKeyRotatedAt DateTime      @default(now())
+  agents          Agent[]
+  gatewayCalls    GatewayCall[]
+  createdAt       DateTime      @default(now())
 }
 
 model Agent {

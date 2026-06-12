@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { Readable } from "node:stream";
 import { orgFromKey } from "./org.js";
 import { captureFromStream } from "./capture.js";
+import { sanitizeError } from "./sanitize.js";
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 
@@ -51,7 +52,9 @@ export async function registerProxyRoutes(app: FastifyInstance) {
       });
     } catch (err) {
       // Network failure talking to Anthropic — surface as a 502, nothing to capture.
-      app.log.error({ err }, "gateway: upstream fetch failed");
+      // Log a sanitized error view only: never the request, its headers, or the
+      // forwarded provider/org credentials.
+      app.log.error({ err: sanitizeError(err) }, "gateway: upstream fetch failed");
       return reply.code(502).send({ error: "upstream request to Anthropic failed" });
     }
 

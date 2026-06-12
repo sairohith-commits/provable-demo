@@ -1,4 +1,6 @@
-import { prisma } from "@provable/db";
+// Tenant-guarded client: the event read below is scoped by agentId (the guard's
+// Event scope key). Callers must verify the agent belongs to req.org.id first.
+import { prismaScoped as prisma } from "@provable/db";
 
 // Hardcoded human-baseline assumptions (would be org config in the real product).
 export const ROI_ASSUMPTIONS = {

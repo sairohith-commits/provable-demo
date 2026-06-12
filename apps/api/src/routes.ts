@@ -1,16 +1,48 @@
-import type { FastifyInstance } from "fastify";
-import { prisma } from "@provable/db";
+import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
+import { prismaScoped as prisma, type Org } from "@provable/db";
+import { hashApiKey } from "./lib/apiKey.js";
 import { computeRoi } from "./roi.js";
 import { enqueueRecompute } from "./queue.js";
+
+// Every request that presents a valid x-provable-key gets req.org set here.
+declare module "fastify" {
+  interface FastifyRequest {
+    org?: Org;
+  }
+}
+
+// Resolve the authenticated org by sha256 hash of the presented key against the
+// unique apiKeyHash index. On failure it sends the 401 and returns null, so the
+// caller does `const org = await requireOrg(req, reply); if (!org) return;`.
+// The two failure shapes (malformed vs. invalid) are the only distinction a
+// caller can observe — neither reveals whether a given key exists.
+async function requireOrg(req: FastifyRequest, reply: FastifyReply): Promise<Org | null> {
+  const presented = req.headers["x-provable-key"];
+  if (typeof presented !== "string" || !presented.startsWith("pk_live_")) {
+    reply.code(401).send({ error: "missing_or_malformed_key" });
+    return null;
+  }
+  const org = await prisma.org.findUnique({ where: { apiKeyHash: hashApiKey(presented) } });
+  if (!org) {
+    reply.code(401).send({ error: "invalid_key" });
+    return null;
+  }
+  req.org = org;
+  return org;
+}
 
 async function latestScore(taskId: string) {
   return prisma.score.findFirst({ where: { taskId }, orderBy: { calculatedAt: "desc" } });
 }
 
 export async function registerRoutes(app: FastifyInstance) {
-  // GET /agents — agents with latest score per task.
-  app.get("/agents", async () => {
+  // GET /agents — agents with latest score per task (scoped to the caller's org).
+  app.get("/agents", async (req, reply) => {
+    const org = await requireOrg(req, reply);
+    if (!org) return;
+
     const agents = await prisma.agent.findMany({
+      where: { orgId: org.id },
       orderBy: { createdAt: "asc" },
       include: { tasks: { orderBy: { createdAt: "asc" } } },
     });
@@ -44,8 +76,11 @@ export async function registerRoutes(app: FastifyInstance) {
 
   // GET /agents/:id — detail with each task's latest score + 30-day history.
   app.get<{ Params: { id: string } }>("/agents/:id", async (req, reply) => {
-    const agent = await prisma.agent.findUnique({
-      where: { id: req.params.id },
+    const org = await requireOrg(req, reply);
+    if (!org) return;
+
+    const agent = await prisma.agent.findFirst({
+      where: { id: req.params.id, orgId: org.id },
       include: { tasks: { orderBy: { createdAt: "asc" } } },
     });
     if (!agent) return reply.code(404).send({ error: "agent not found" });
@@ -72,21 +107,36 @@ export async function registerRoutes(app: FastifyInstance) {
   });
 
   // GET /agents/:id/alerts
-  app.get<{ Params: { id: string } }>("/agents/:id/alerts", async (req) => {
-    return prisma.alert.findMany({ where: { agentId: req.params.id }, orderBy: { createdAt: "desc" } });
+  app.get<{ Params: { id: string } }>("/agents/:id/alerts", async (req, reply) => {
+    const org = await requireOrg(req, reply);
+    if (!org) return;
+    const agent = await prisma.agent.findFirst({ where: { id: req.params.id, orgId: org.id }, select: { id: true } });
+    if (!agent) return reply.code(404).send({ error: "agent not found" });
+
+    return prisma.alert.findMany({ where: { agentId: agent.id }, orderBy: { createdAt: "desc" } });
   });
 
   // GET /agents/:id/roi — ROI Proof Engine payload.
-  app.get<{ Params: { id: string } }>("/agents/:id/roi", async (req) => {
-    return computeRoi(req.params.id);
+  app.get<{ Params: { id: string } }>("/agents/:id/roi", async (req, reply) => {
+    const org = await requireOrg(req, reply);
+    if (!org) return;
+    const agent = await prisma.agent.findFirst({ where: { id: req.params.id, orgId: org.id }, select: { id: true } });
+    if (!agent) return reply.code(404).send({ error: "agent not found" });
+
+    return computeRoi(agent.id);
   });
 
-  // GET /tasks/:id/audit — recent events with full metadata.
-  app.get<{ Params: { id: string }; Querystring: { limit?: string } }>("/tasks/:id/audit", async (req) => {
+  // GET /tasks/:id/audit — recent events with full metadata (scoped via the
+  // task's agent -> org chain).
+  app.get<{ Params: { id: string }; Querystring: { limit?: string } }>("/tasks/:id/audit", async (req, reply) => {
+    const org = await requireOrg(req, reply);
+    if (!org) return;
     const limit = Math.min(Number(req.query.limit ?? 100), 500);
-    const task = await prisma.task.findUnique({ where: { id: req.params.id } });
+    const task = await prisma.task.findFirst({ where: { id: req.params.id, agent: { orgId: org.id } } });
+    if (!task) return reply.code(404).send({ error: "task not found" });
+
     const events = await prisma.event.findMany({
-      where: { taskId: req.params.id },
+      where: { taskId: task.id },
       orderBy: { createdAt: "desc" },
       take: limit,
     });
@@ -94,10 +144,15 @@ export async function registerRoutes(app: FastifyInstance) {
   });
 
   // GET /agents/:id/tokens — token-burn series for the cost view (support agent).
-  app.get<{ Params: { id: string } }>("/agents/:id/tokens", async (req) => {
+  app.get<{ Params: { id: string } }>("/agents/:id/tokens", async (req, reply) => {
+    const org = await requireOrg(req, reply);
+    if (!org) return;
+    const agent = await prisma.agent.findFirst({ where: { id: req.params.id, orgId: org.id }, select: { id: true } });
+    if (!agent) return reply.code(404).send({ error: "agent not found" });
+
     const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     const events = await prisma.event.findMany({
-      where: { agentId: req.params.id, createdAt: { gte: since }, tokens: { not: null } },
+      where: { agentId: agent.id, createdAt: { gte: since }, tokens: { not: null } },
       orderBy: { createdAt: "asc" },
       select: { tokens: true, createdAt: true, metadata: true },
     });
@@ -125,8 +180,8 @@ export async function registerRoutes(app: FastifyInstance) {
 
   // GET /gateway/stats — last-24h call volume / spend + discovery summary.
   app.get("/gateway/stats", async (req, reply) => {
-    const org = await orgFromKey(req);
-    if (!org) return reply.code(401).send({ error: "missing or invalid x-provable-key" });
+    const org = await requireOrg(req, reply);
+    if (!org) return;
 
     // Rolling 24h window (not UTC-calendar-day) — avoids the midnight
     // boundary artifact and is correct regardless of the org's timezone.
@@ -160,8 +215,8 @@ export async function registerRoutes(app: FastifyInstance) {
 
   // GET /gateway/by-agent — spend + call count grouped by agent.
   app.get("/gateway/by-agent", async (req, reply) => {
-    const org = await orgFromKey(req);
-    if (!org) return reply.code(401).send({ error: "missing or invalid x-provable-key" });
+    const org = await requireOrg(req, reply);
+    if (!org) return;
 
     const grouped = await prisma.gatewayCall.groupBy({
       by: ["agentId"],
@@ -171,7 +226,7 @@ export async function registerRoutes(app: FastifyInstance) {
     });
 
     const agentIds = grouped.map((g) => g.agentId).filter((id): id is string => !!id);
-    const agents = await prisma.agent.findMany({ where: { id: { in: agentIds } }, select: { id: true, name: true } });
+    const agents = await prisma.agent.findMany({ where: { id: { in: agentIds }, orgId: org.id }, select: { id: true, name: true } });
     const nameById = new Map(agents.map((a) => [a.id, a.name]));
 
     return grouped
@@ -185,8 +240,8 @@ export async function registerRoutes(app: FastifyInstance) {
 
   // GET /gateway/by-model — call share grouped by model.
   app.get("/gateway/by-model", async (req, reply) => {
-    const org = await orgFromKey(req);
-    if (!org) return reply.code(401).send({ error: "missing or invalid x-provable-key" });
+    const org = await requireOrg(req, reply);
+    if (!org) return;
 
     const grouped = await prisma.gatewayCall.groupBy({
       by: ["model"],
@@ -207,8 +262,8 @@ export async function registerRoutes(app: FastifyInstance) {
 
   // GET /gateway/feed?limit=50 — recent calls, most recent first.
   app.get<{ Querystring: { limit?: string } }>("/gateway/feed", async (req, reply) => {
-    const org = await orgFromKey(req);
-    if (!org) return reply.code(401).send({ error: "missing or invalid x-provable-key" });
+    const org = await requireOrg(req, reply);
+    if (!org) return;
 
     const limit = Math.min(Number(req.query.limit ?? 50), 200);
     const calls = await prisma.gatewayCall.findMany({
@@ -227,23 +282,25 @@ export async function registerRoutes(app: FastifyInstance) {
     }));
   });
 
-  // GET /org/key — returns the authenticated org's API key + the public API
-  // URL agents should call. Powers the dashboard's self-service onboarding modal.
+  // GET /org/key — READ path. The full key is unrecoverable (only its hash +
+  // display prefix are stored), so this returns the prefix ONLY, never a usable
+  // key. The full key is shown once at creation/rotation. Powers the dashboard's
+  // onboarding modal (identification + the public API URL agents should call).
   app.get("/org/key", async (req, reply) => {
-    const org = await orgFromKey(req);
-    if (!org) return reply.code(401).send({ error: "missing or invalid x-provable-key" });
+    const org = await requireOrg(req, reply);
+    if (!org) return;
 
     const apiUrl =
       process.env.PUBLIC_API_URL ?? `${req.protocol}://${req.headers.host}`;
 
-    return { apiKey: org.apiKey, apiUrl };
+    return { apiKeyPrefix: org.apiKeyPrefix, apiUrl };
   });
 
   // POST /register — self-enrollment by org key. Idempotent: upsert agent by
   // (orgId, name) and each task by (agentId, key). No internal IDs cross the wire.
   app.post<{ Body: RegisterBody }>("/register", async (req, reply) => {
-    const org = await orgFromKey(req);
-    if (!org) return reply.code(401).send({ error: "missing or invalid x-provable-key" });
+    const org = await requireOrg(req, reply);
+    if (!org) return;
 
     const b = req.body;
     if (!b?.agent || !Array.isArray(b.tasks) || b.tasks.length === 0) {
@@ -281,8 +338,8 @@ export async function registerRoutes(app: FastifyInstance) {
     // legacy by-id path (demo:fire / internal agents) never sends `task`, so it
     // is unaffected by any headers.
     if (b?.task) {
-      const org = await orgFromKey(req);
-      if (!org) return reply.code(401).send({ error: "missing or invalid x-provable-key" });
+      const org = await requireOrg(req, reply);
+      if (!org) return;
 
       const agentName = req.headers["x-provable-agent"];
       if (!agentName || !b?.task || !b?.outcome) {
@@ -378,12 +435,6 @@ async function maybeRaiseRunawayAlert(agentId: string, agentName: string, tokens
     });
   }
   return RUNAWAY_TOKEN_CAP;
-}
-
-async function orgFromKey(req: { headers: Record<string, any> }) {
-  const key = req.headers["x-provable-key"];
-  if (!key) return null;
-  return prisma.org.findUnique({ where: { apiKey: String(key) } });
 }
 
 // "3m ago", "2h ago", "just now" — for the gateway feed.

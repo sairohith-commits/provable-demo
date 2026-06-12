@@ -36,6 +36,9 @@ export async function captureFromStream(body: ReadableStream<Uint8Array>, ctx: C
       agentId = agent.id;
     }
 
+    // Persisted cost-capture row — ONLY these 7 telemetry fields. No request
+    // headers, no authorization / x-api-key / x-provable-key, no body material
+    // ever touches this object. (id + createdAt are DB-generated.)
     await prisma.gatewayCall.create({
       data: {
         orgId: ctx.orgId,

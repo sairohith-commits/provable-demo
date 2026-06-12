@@ -123,17 +123,18 @@ export async function registerRoutes(app: FastifyInstance) {
 
   // ---- Gateway telemetry (apps/gateway captures GatewayCall rows) ----
 
-  // GET /gateway/stats — today's call volume / spend + discovery summary.
+  // GET /gateway/stats — last-24h call volume / spend + discovery summary.
   app.get("/gateway/stats", async (req, reply) => {
     const org = await orgFromKey(req);
     if (!org) return reply.code(401).send({ error: "missing or invalid x-provable-key" });
 
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
+    // Rolling 24h window (not UTC-calendar-day) — avoids the midnight
+    // boundary artifact and is correct regardless of the org's timezone.
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
     const [today, agentsDiscovered, last] = await Promise.all([
       prisma.gatewayCall.aggregate({
-        where: { orgId: org.id, createdAt: { gte: startOfDay } },
+        where: { orgId: org.id, createdAt: { gte: since } },
         _count: { _all: true },
         _sum: { costUsd: true },
       }),

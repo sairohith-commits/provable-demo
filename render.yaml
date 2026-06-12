@@ -36,7 +36,7 @@ services:
     healthCheckPath: /health
     buildCommand: npm install -g pnpm@9 && pnpm install --no-frozen-lockfile && pnpm --filter @provable/db exec prisma generate
     # Sync the schema, then run the API (tsx runs the TS workspace directly).
-    startCommand: pnpm --filter @provable/db exec prisma db push --skip-generate && pnpm --filter @provable/api exec tsx src/index.ts
+    startCommand: pnpm --filter @provable/db exec prisma migrate deploy && pnpm --filter @provable/api exec tsx src/index.ts
     envVars:
       - key: NODE_VERSION
         value: "20.18.0"

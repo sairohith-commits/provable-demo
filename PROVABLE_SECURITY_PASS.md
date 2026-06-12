@@ -31,7 +31,7 @@ Non-goals for this pass (explicitly deferred, do not build):
 
 | Concern | Current | Target |
 |---|---|---|
-| Key storage | `Org.apiKey` plaintext, hardcoded `pk_live_atlas_a1b2c3d4e5f6` | `Org.apiKeyHash` (unique, indexed) + `Org.apiKeyPrefix` (display only). No plaintext key in DB. |
+| Key storage | `Org.apiKey` plaintext, hardcoded `<atlas-key-rotated-out>` | `Org.apiKeyHash` (unique, indexed) + `Org.apiKeyPrefix` (display only). No plaintext key in DB. |
 | Key creation | Seed constant | `generateApiKey()` at org creation; full key returned **once**, never re-readable |
 | Auth check | string equality on `x-provable-key` | sha256(incoming) → `findUnique({ apiKeyHash })`; 401 on miss |
 | Tenant scoping | org resolved, but trust handler discipline | `req.org` set by middleware; mandatory `orgId` filter enforced + a guard that fails loudly if a query forgets it |
@@ -164,7 +164,7 @@ This is the part that bites in a live demo. Sequence matters.
 2. **Backfill Atlas:** generate a real key for the existing Atlas org, write its hash + prefix, capture the full key from stdout **once**.
 3. **Re-point `refund-desk`:** update the `PROVABLE_API_KEY` env var on the `refund-desk` Render service to the new full key. Redeploy.
 4. Smoke: submit one refund through refund-desk → confirm `track()` lands on the new key → confirm the decision scores and shows in the dashboard.
-5. Only then delete any reference to `pk_live_atlas_a1b2c3d4e5f6` from source.
+5. Only then delete any reference to `<atlas-key-rotated-out>` from source.
 
 Do **not** delete the old constant before step 4 passes. If the smoke fails, the old key is the rollback path.
 
@@ -192,7 +192,7 @@ Run in order. Stop at each gate. Paste output back before proceeding.
 > **Gate:** sentinel test passes; proxied call still returns Anthropic's response byte-for-byte.
 
 ### Phase S4 — Migrate Atlas, then purge the constant
-> Create `scripts/migrate-atlas-key.mjs` that finds the Atlas org, generates a real key, writes hash + prefix, and prints (a) the full key once and (b) the exact `refund-desk` Render env var to set. Do NOT delete the hardcoded `pk_live_atlas_a1b2c3d4e5f6` constant yet. Output the script.
+> Create `scripts/migrate-atlas-key.mjs` that finds the Atlas org, generates a real key, writes hash + prefix, and prints (a) the full key once and (b) the exact `refund-desk` Render env var to set. Do NOT delete the hardcoded `<atlas-key-rotated-out>` constant yet. Output the script.
 >
 > **Gate (manual, in order):** run script → update refund-desk env on Render → redeploy → submit one refund → confirm it scores in the dashboard. Only after that passes: remove the old constant from source in a separate commit.
 
@@ -200,7 +200,7 @@ Run in order. Stop at each gate. Paste output back before proceeding.
 
 ## 10. Acceptance checklist (whole pass)
 
-- [ ] No plaintext key, and no `pk_live_atlas_a1b2c3d4e5f6`, anywhere in source or seed
+- [ ] No plaintext key, and no `<atlas-key-rotated-out>`, anywhere in source or seed
 - [ ] DB stores only `apiKeyHash` + `apiKeyPrefix`; full key irrecoverable
 - [ ] New org → key shown once, works on next request, never re-readable
 - [ ] Invalid key → 401; valid key → scoped `req.org`

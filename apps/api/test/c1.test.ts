@@ -117,6 +117,15 @@ describe("internal-token auth branch", () => {
     expect(bad.status).toBe(401);
     expect(bad.body.error).toBe("invalid_internal_token");
 
+    // Short/garbage bearer (unequal length) must NOT throw RangeError in
+    // timingSafeEqual — it returns a clean 401, never a 500.
+    const short = await request(app.server)
+      .get("/agents")
+      .set("authorization", "Bearer x")
+      .set("x-provable-org-id", A.org.id);
+    expect(short.status).toBe(401);
+    expect(short.body.error).toBe("invalid_internal_token");
+
     // Valid token, unknown org id → 401 invalid_org_id.
     const unknown = await request(app.server)
       .get("/agents")

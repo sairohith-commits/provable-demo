@@ -32,6 +32,7 @@ model Org {
   apiKeyHash      String        @unique // sha256 hex of the full key
   apiKeyPrefix    String        // e.g. "pk_live_a1b2c3d4" — display only
   apiKeyRotatedAt DateTime      @default(now())
+  clerkOrgId      String?       @unique // 1:1 link to a Clerk Organization; null for legacy/unlinked rows (backfilled in C6)
   agents          Agent[]
   gatewayCalls    GatewayCall[]
   createdAt       DateTime      @default(now())

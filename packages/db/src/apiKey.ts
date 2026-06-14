@@ -1,9 +1,8 @@
 import { randomBytes, createHash } from "node:crypto";
 
-// Canonical key module — single home for generation + hashing so the API,
-// the gateway, the seed, and any tooling all agree. apps/api/src/lib/apiKey.ts
-// re-exports these so its documented import path stays valid; the gateway and
-// the seed import them straight from "@provable/db" (no app-to-app dependency).
+// Canonical key module — the SINGLE home for generation + hashing so the API,
+// the gateway, the seed, and any tooling all agree. Everything imports these
+// straight from "@provable/db" (no app-to-app dependency, no duplicated copy).
 
 const PREFIX = "pk_live_";
 

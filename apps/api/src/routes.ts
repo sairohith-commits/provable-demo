@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
-import { prismaScoped as prisma, type Org } from "@provable/db";
-import { hashApiKey } from "./lib/apiKey.js";
+import { timingSafeEqual } from "node:crypto";
+import { prismaScoped as prisma, hashApiKey, type Org } from "@provable/db";
 import { computeRoi } from "./roi.js";
 import { enqueueRecompute } from "./queue.js";
 
@@ -11,12 +11,65 @@ declare module "fastify" {
   }
 }
 
-// Resolve the authenticated org by sha256 hash of the presented key against the
-// unique apiKeyHash index. On failure it sends the 401 and returns null, so the
-// caller does `const org = await requireOrg(req, reply); if (!org) return;`.
-// The two failure shapes (malformed vs. invalid) are the only distinction a
-// caller can observe — neither reveals whether a given key exists.
-async function requireOrg(req: FastifyRequest, reply: FastifyReply): Promise<Org | null> {
+// Constant-time comparison of the presented internal token against the expected
+// secret. Length-mismatch short-circuits (timingSafeEqual requires equal length);
+// the secret itself is never logged or echoed.
+function safeTokenEqual(presented: string, expected: string): boolean {
+  const a = Buffer.from(presented);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
+}
+
+// Resolve the authenticated org and set req.org. Two auth paths:
+//
+//   1. Internal service-token branch (P2 / D3) — checked FIRST, allowed ONLY on
+//      dashboard READ routes (opts.allowInternal). The trusted web tier presents
+//      `Authorization: Bearer <PROVABLE_INTERNAL_TOKEN>` + `x-provable-org-id`.
+//      The org id is server-derived from a Clerk-verified session upstream, never
+//      client input. A valid token resolves the org by id; once req.org is set the
+//      request flows through the SAME P1 tenant-guard as the machine-key path.
+//   2. Machine-key branch (P1) — sha256 of `x-provable-key` against the unique
+//      apiKeyHash index. This is the ONLY path on ingestion (/track*) and gateway
+//      routes; the internal branch is never offered there.
+//
+// On failure it sends the 401 and returns null, so callers do
+// `const org = await requireOrg(req, reply, opts); if (!org) return;`.
+async function requireOrg(
+  req: FastifyRequest,
+  reply: FastifyReply,
+  opts: { allowInternal?: boolean } = {},
+): Promise<Org | null> {
+  // --- Internal service-token branch (dashboard read routes only) ---
+  if (opts.allowInternal) {
+    const authz = req.headers["authorization"];
+    const bearer =
+      typeof authz === "string" && authz.startsWith("Bearer ") ? authz.slice("Bearer ".length) : null;
+    if (bearer !== null) {
+      // A Bearer was presented → this is an internal-auth attempt. Validate it
+      // fully here; do NOT fall back to the machine-key path on a bad token.
+      const expected = process.env.PROVABLE_INTERNAL_TOKEN;
+      if (!expected || !safeTokenEqual(bearer, expected)) {
+        reply.code(401).send({ error: "invalid_internal_token" });
+        return null;
+      }
+      const orgId = req.headers["x-provable-org-id"];
+      if (typeof orgId !== "string" || orgId.length === 0) {
+        reply.code(401).send({ error: "missing_org_id" });
+        return null;
+      }
+      const org = await prisma.org.findUnique({ where: { id: orgId } });
+      if (!org) {
+        reply.code(401).send({ error: "invalid_org_id" });
+        return null;
+      }
+      req.org = org;
+      return org;
+    }
+    // No Bearer → fall through to the machine-key path below.
+  }
+
+  // --- Machine-key branch (P1, unchanged) ---
   const presented = req.headers["x-provable-key"];
   if (typeof presented !== "string" || !presented.startsWith("pk_live_")) {
     reply.code(401).send({ error: "missing_or_malformed_key" });
@@ -38,7 +91,7 @@ async function latestScore(taskId: string) {
 export async function registerRoutes(app: FastifyInstance) {
   // GET /agents — agents with latest score per task (scoped to the caller's org).
   app.get("/agents", async (req, reply) => {
-    const org = await requireOrg(req, reply);
+    const org = await requireOrg(req, reply, { allowInternal: true });
     if (!org) return;
 
     const agents = await prisma.agent.findMany({
@@ -76,7 +129,7 @@ export async function registerRoutes(app: FastifyInstance) {
 
   // GET /agents/:id — detail with each task's latest score + 30-day history.
   app.get<{ Params: { id: string } }>("/agents/:id", async (req, reply) => {
-    const org = await requireOrg(req, reply);
+    const org = await requireOrg(req, reply, { allowInternal: true });
     if (!org) return;
 
     const agent = await prisma.agent.findFirst({
@@ -108,7 +161,7 @@ export async function registerRoutes(app: FastifyInstance) {
 
   // GET /agents/:id/alerts
   app.get<{ Params: { id: string } }>("/agents/:id/alerts", async (req, reply) => {
-    const org = await requireOrg(req, reply);
+    const org = await requireOrg(req, reply, { allowInternal: true });
     if (!org) return;
     const agent = await prisma.agent.findFirst({ where: { id: req.params.id, orgId: org.id }, select: { id: true } });
     if (!agent) return reply.code(404).send({ error: "agent not found" });
@@ -118,7 +171,7 @@ export async function registerRoutes(app: FastifyInstance) {
 
   // GET /agents/:id/roi — ROI Proof Engine payload.
   app.get<{ Params: { id: string } }>("/agents/:id/roi", async (req, reply) => {
-    const org = await requireOrg(req, reply);
+    const org = await requireOrg(req, reply, { allowInternal: true });
     if (!org) return;
     const agent = await prisma.agent.findFirst({ where: { id: req.params.id, orgId: org.id }, select: { id: true } });
     if (!agent) return reply.code(404).send({ error: "agent not found" });
@@ -129,7 +182,7 @@ export async function registerRoutes(app: FastifyInstance) {
   // GET /tasks/:id/audit — recent events with full metadata (scoped via the
   // task's agent -> org chain).
   app.get<{ Params: { id: string }; Querystring: { limit?: string } }>("/tasks/:id/audit", async (req, reply) => {
-    const org = await requireOrg(req, reply);
+    const org = await requireOrg(req, reply, { allowInternal: true });
     if (!org) return;
     const limit = Math.min(Number(req.query.limit ?? 100), 500);
     const task = await prisma.task.findFirst({ where: { id: req.params.id, agent: { orgId: org.id } } });
@@ -145,7 +198,7 @@ export async function registerRoutes(app: FastifyInstance) {
 
   // GET /agents/:id/tokens — token-burn series for the cost view (support agent).
   app.get<{ Params: { id: string } }>("/agents/:id/tokens", async (req, reply) => {
-    const org = await requireOrg(req, reply);
+    const org = await requireOrg(req, reply, { allowInternal: true });
     if (!org) return;
     const agent = await prisma.agent.findFirst({ where: { id: req.params.id, orgId: org.id }, select: { id: true } });
     if (!agent) return reply.code(404).send({ error: "agent not found" });

@@ -106,28 +106,11 @@ export interface ClaimEvent {
   createdAt: string;
 }
 
-// All api.* fetches run in a SERVER context (the dashboard pages are async RSCs
-// with `export const dynamic = "force-dynamic"`; client components only import
-// types/helpers from this module). PROVABLE_API_KEY is a server-only env var —
-// it is read here, never prefixed NEXT_PUBLIC_, and never reaches the browser.
-// The dashboard endpoints are tenant-scoped, so the key identifies the org whose
-// agents/alerts/roi/tokens/audit are returned.
-async function get<T>(path: string): Promise<T> {
-  const key = process.env.PROVABLE_API_KEY;
-  const headers: Record<string, string> = key ? { "x-provable-key": key } : {};
-  const res = await fetch(`${API_URL}${path}`, { cache: "no-store", headers });
-  if (!res.ok) throw new Error(`API ${path} -> ${res.status}`);
-  return res.json() as Promise<T>;
-}
-
-export const api = {
-  agents: () => get<Agent[]>("/agents"),
-  agent: (id: string) => get<AgentDetail>(`/agents/${id}`),
-  alerts: (id: string) => get<Alert[]>(`/agents/${id}/alerts`),
-  roi: (id: string) => get<Roi>(`/agents/${id}/roi`),
-  tokens: (id: string) => get<TokenBucket[]>(`/agents/${id}/tokens`),
-  audit: (taskId: string) => get<{ task: { id: string; name: string }; events: ClaimEvent[] }>(`/tasks/${taskId}/audit?limit=120`),
-};
+// NOTE: the server-side fetch layer (the `api` object) lives in `lib/api.server.ts`.
+// This module stays free of server-only imports so client components can keep
+// importing the types and the mode/format helpers below. The transitional
+// PROVABLE_API_KEY is gone (C3) — reads now flow through the internal service
+// token + the session-derived org id; see lib/api.server.ts.
 
 // ---- mode helpers ----
 export function modeLabel(m: Mode): string {

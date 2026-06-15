@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
-import { api, type Agent } from "@/lib/api";
+import { type Agent } from "@/lib/api";
+import { api } from "@/lib/api.server";
 import { getActiveOrg } from "@/lib/getActiveOrg";
 import { RegistryCard } from "@/components/registry-card";
 import { OnboardAgentModal } from "@/components/onboard-agent-modal";
@@ -7,17 +8,15 @@ import { OnboardAgentModal } from "@/components/onboard-agent-modal";
 export const dynamic = "force-dynamic";
 
 export default async function RegistryPage() {
-  // C2: server-derived org context (orgId comes only from the verified Clerk
+  // Server-derived org context (orgId comes only from the verified Clerk
   // session). A signed-in user with an active org gets their Provable Org
   // JIT-provisioned here; a signed-in user with no org is routed to onboarding.
-  // Signed-out visitors fall through to the transitional public dashboard below
-  // (data still flows via PROVABLE_API_KEY until the C3 swap).
   const active = await getActiveOrg();
   if (active.status === "needs-onboarding") redirect("/onboarding");
 
-  // The authed landing must NOT be coupled to the transitional PROVABLE_API_KEY
-  // (C3 replaces this with per-org reads). If that key is missing/invalid the
-  // /agents read 401s — degrade to an empty registry instead of hard-500ing.
+  // C3: reads are scoped to the session's org via the internal token (see
+  // lib/api.server.ts). Still degrade to an empty registry on any read failure
+  // (no active org / API unavailable) instead of hard-500ing the landing.
   let agents: Agent[] = [];
   let loadError = false;
   try {

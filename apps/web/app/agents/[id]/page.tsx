@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { api } from "@/lib/api";
+import { api } from "@/lib/api.server";
 import { ReadinessCard } from "@/components/readiness-card";
 import { TrendChart } from "@/components/trend-chart";
 import { WhyMode } from "@/components/why-mode";

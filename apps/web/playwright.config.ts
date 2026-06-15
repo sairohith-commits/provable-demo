@@ -49,6 +49,12 @@ export default defineConfig({
       reuseExistingServer: !process.env.CI,
       stdout: "pipe",
       stderr: "pipe",
+      // C3 proof: blank out the old transitional key in the web server's env.
+      // Next does not override an already-set process.env var when loading
+      // .env.local, so this stays empty. If dashboard reads still work, they are
+      // genuinely independent of PROVABLE_API_KEY (it's gone). The internal token
+      // (PROVABLE_INTERNAL_TOKEN) is inherited from .env.local and preserved.
+      env: { PROVABLE_API_KEY: "" },
     },
   ],
 });

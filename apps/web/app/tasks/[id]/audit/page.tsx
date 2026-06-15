@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { api } from "@/lib/api";
+import { api } from "@/lib/api.server";
 import { AuditTable } from "@/components/audit-table";
 import { ArrowLeft } from "lucide-react";
 

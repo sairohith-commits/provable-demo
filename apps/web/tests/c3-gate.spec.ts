@@ -61,6 +61,11 @@ async function signInAndLand(context: BrowserContext, t: Tenant): Promise<Page> 
     { timeout: 15_000 },
   );
 
+  // C4: getActiveOrg no longer JIT-provisions — onboarding is the sole
+  // provisioner. Entering /onboarding with an active-but-unprovisioned org
+  // auto-provisions it; wait until the Provable Org exists, then land on /.
+  await page.goto("/onboarding");
+  await waitForProvableOrg(t.clerkOrgId);
   await page.goto("/");
   await expect(page, "active-org user lands on the dashboard, not sign-in/onboarding").not.toHaveURL(
     /\/(sign-in|onboarding)/,

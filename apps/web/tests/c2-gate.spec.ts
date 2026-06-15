@@ -74,30 +74,19 @@ test("(b–d) onboarding routing + JIT provisioning", async ({ page }) => {
     await expect(page).toHaveURL(/\/onboarding/);
   });
 
-  await test.step("(c) create org via <CreateOrganization/> → back to / (no bounce)", async () => {
-    // The CreateOrganization form: org-name textbox + a submit button. Race it
-    // against Clerk's "Organizations feature required" dev overlay so a missing
-    // dashboard setting fails fast with a clear message instead of a long timeout.
-    const submit = page.getByRole("button", { name: /create organization/i });
-    const orgsDisabled = page.getByText(/Organizations feature required/i).first();
-    await expect(submit.or(orgsDisabled)).toBeVisible({ timeout: 20_000 });
-    if (await orgsDisabled.isVisible().catch(() => false)) {
-      throw new Error(
-        "Clerk Organizations is NOT enabled on this instance. Enable it in the Clerk " +
-          "dashboard (Configure → Organizations → choose a membership mode → Enable), " +
-          "then rerun. The app code is correct; this is a dashboard setting.",
-      );
-    }
-    const nameInput = page.getByRole("textbox").first();
-    await nameInput.fill(ORG_NAME);
-    await submit.click();
-
-    // Lands on the dashboard and does NOT bounce back to onboarding.
-    await page.waitForURL((url) => url.pathname === "/", { timeout: 30_000 });
-    await expect(page).not.toHaveURL(/\/onboarding/);
+  await test.step("(c) name the workspace in the onboarding flow → key screen", async () => {
+    // C4 replaced the Clerk <CreateOrganization/> stub with the branded 3-screen
+    // flow. Screen 1 takes a workspace name; submitting creates + activates the
+    // Clerk org and provisions the Provable Org, landing on the show-once key
+    // screen (screen 2).
+    await page.getByLabel(/workspace name/i).fill(ORG_NAME);
+    await page.getByRole("button", { name: /create workspace/i }).click();
+    await expect(page.getByTestId("api-key"), "key screen reached = org provisioned").toBeVisible({
+      timeout: 30_000,
+    });
   });
 
-  await test.step("(d) JIT provisioning: exactly one Org row, idempotent on reload", async () => {
+  await test.step("(d) provisioning: exactly one Org row, idempotent on reload", async () => {
     await clerk.loaded({ page });
     clerkOrgId = await page.evaluate(() => (window as any).Clerk?.organization?.id as string | undefined);
     expect(clerkOrgId, "active Clerk org id is set on the session").toBeTruthy();

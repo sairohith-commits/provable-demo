@@ -9,10 +9,13 @@ export const dynamic = "force-dynamic";
 
 export default async function RegistryPage() {
   // Server-derived org context (orgId comes only from the verified Clerk
-  // session). A signed-in user with an active org gets their Provable Org
-  // JIT-provisioned here; a signed-in user with no org is routed to onboarding.
+  // session). Anyone not yet fully onboarded — no active Clerk org, or an active
+  // org whose Provable Org hasn't been provisioned (and key issued) yet — is sent
+  // to the onboarding flow, which is the sole provisioner (C4 show-once).
   const active = await getActiveOrg();
-  if (active.status === "needs-onboarding") redirect("/onboarding");
+  if (active.status === "needs-onboarding" || active.status === "unprovisioned") {
+    redirect("/onboarding");
+  }
 
   // C3: reads are scoped to the session's org via the internal token (see
   // lib/api.server.ts). Still degrade to an empty registry on any read failure

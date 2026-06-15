@@ -5,6 +5,7 @@ import { TrendChart } from "@/components/trend-chart";
 import { WhyMode } from "@/components/why-mode";
 import { RoiPanel } from "@/components/roi-panel";
 import { CostView } from "@/components/cost-view";
+import { EmptyState } from "@/components/empty-state";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, ScrollText } from "lucide-react";
 
@@ -40,14 +41,23 @@ export default async function AgentDetailPage({ params }: { params: Promise<{ id
       </div>
 
       {/* Readiness cards — same agent, different verdicts */}
-      <section>
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">Task readiness</h2>
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {agent.tasks.map((t) => (
-            <ReadinessCard key={t.id} task={t} />
-          ))}
-        </div>
-      </section>
+      {agent.tasks.length === 0 ? (
+        <EmptyState
+          testId="empty-tasks"
+          title="No tasks yet"
+          body="This agent hasn’t reported any tasks. Send your first event with the @provable/sdk and its tasks and readiness scores will appear here."
+          primary={{ href: "/settings", label: "Get your API key" }}
+        />
+      ) : (
+        <section>
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">Task readiness</h2>
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            {agent.tasks.map((t) => (
+              <ReadinessCard key={t.id} task={t} />
+            ))}
+          </div>
+        </section>
+      )}
 
       {isClaimsAgent && (
         <section className="grid gap-6 lg:grid-cols-5">

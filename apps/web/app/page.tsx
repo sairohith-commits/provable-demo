@@ -3,6 +3,7 @@ import { type Agent } from "@/lib/api";
 import { api } from "@/lib/api.server";
 import { getActiveOrg } from "@/lib/getActiveOrg";
 import { RegistryCard } from "@/components/registry-card";
+import { EmptyState } from "@/components/empty-state";
 import { OnboardAgentModal } from "@/components/onboard-agent-modal";
 
 export const dynamic = "force-dynamic";
@@ -42,11 +43,16 @@ export default async function RegistryPage() {
       </div>
 
       {agents.length === 0 ? (
-        <div className="rounded-lg border border-dashed p-10 text-center text-muted-foreground">
-          {loadError
-            ? "Couldn’t load agents right now. Per-organization dashboard data is wired up in the next step."
-            : "No agents yet — install the SDK and send your first event to see them here."}
-        </div>
+        <EmptyState
+          testId="empty-agents"
+          title={loadError ? "Couldn’t load agents" : "No agents yet"}
+          body={
+            loadError
+              ? "We couldn’t reach your agents right now. Try again in a moment."
+              : "Install the @provable/sdk and send your first event — your agents and their readiness scores will show up here automatically."
+          }
+          primary={loadError ? undefined : { href: "/settings", label: "Get your API key" }}
+        />
       ) : (
         <div className="grid gap-6 md:grid-cols-2">
           {agents.map((a) => (

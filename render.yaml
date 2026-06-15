@@ -76,7 +76,7 @@ services:
     region: oregon
     rootDir: .
     autoDeploy: true
-    buildCommand: npm install -g pnpm@9 && pnpm install --no-frozen-lockfile && pnpm --filter @provable/web build
+    buildCommand: npm install -g pnpm@9 && pnpm install --no-frozen-lockfile && pnpm --filter @provable/db exec prisma generate && pnpm --filter @provable/web build
     startCommand: pnpm --filter @provable/web exec next start -p $PORT -H 0.0.0.0
     envVars:
       - key: NODE_VERSION

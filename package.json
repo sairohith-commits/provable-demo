@@ -17,7 +17,10 @@
     "agents:live": "pnpm --filter @provable/agents agents:live",
     "agents:runaway": "pnpm --filter @provable/agents agents:runaway",
     "db:studio": "pnpm --filter @provable/db db:studio",
-    "demo:fire": "pnpm --filter @provable/sdk demo:fire"
+    "demo:fire": "pnpm --filter @provable/sdk demo:fire",
+    "smoke:isolation:api": "pnpm --filter @provable/api exec tsx src/tenancy.test.ts",
+    "smoke:isolation:web": "pnpm --filter @provable/web --config.verify-deps-before-run=false exec playwright test tests/c3-gate.spec.ts",
+    "smoke:isolation": "pnpm run smoke:isolation:api && pnpm run smoke:isolation:web"
   },
   "devDependencies": {
     "turbo": "^2.5.0",
